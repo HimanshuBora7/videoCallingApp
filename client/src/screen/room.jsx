@@ -115,6 +115,17 @@ const RoomPage = () => {
   const handleNegoNeedFinal = useCallback(async ({ ans }) => {
     await peer.setLocalDescription(ans);
   }, []);
+
+  const handleEndCall = useCallback(() => {
+    if (myStream) {
+      myStream.getTracks().forEach((track) => {
+        track.stop();
+      });
+    }
+    setMyStream(null);
+    setRemoteStream(null);
+    setRemoteSocketId(null);
+  }, [myStream]);
   return (
     <div>
       <h1>Room page</h1>
@@ -131,6 +142,14 @@ const RoomPage = () => {
           <h1>Remote Stream</h1>
           <video ref={remoteVideoRef} autoPlay height="300px" width="600px" />
         </>
+      )}
+      {myStream && (
+        <button
+          onClick={handleEndCall}
+          style={{ backgroundColor: "red", color: "white" }}
+        >
+          End Call
+        </button>
       )}
     </div>
   );
