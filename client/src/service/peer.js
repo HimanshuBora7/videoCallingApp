@@ -1,39 +1,78 @@
 class PeerService {
   constructor() {
-    if (!this.peer) {
-      this.peer = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: [
-              "stun:stun.l.google.com:19302",
-              "stun:global.stun.twilio.com:3478",
-            ],
-          },
-        ],
-      });
-    }
+    this.peer = null;
+    this.pendingCandidates = [];
+    this.createPeer();
   }
 
-  // 1. You call this to initiate the call (Creates an Offer)
-  async getOffer() {
+  createPeer() {
     if (this.peer) {
-      const offer = await this.peer.createOffer();
-      await this.peer.setLocalDescription(new RTCSessionDescription(offer));
-      return offer;
+      this.peer.close();
     }
+    this.pendingCandidates = [];
+    this.peer = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:global.stun.twilio.com:3478",
+          ],
+        },
+      ],
+    });
+  }
+
+  resetPeer() {
+    this.createPeer();
+  }
+
+  async waitForIceGathering() {
+    if (this.peer.iceGatheringState === "complete") return;
+    await new Promise((resolve) => {
+      const check = () => {
+        if (this.peer.iceGatheringState === "complete") {
+          this.peer.removeEventListener("icegatheringstatechange", check);
+          resolve();
+        }
+      };
+      this.peer.addEventListener("icegatheringstatechange", check);
+    });
+  }
+
+  async getOffer() {
+    const offer = await this.peer.createOffer();
+    await this.peer.setLocalDescription(new RTCSessionDescription(offer));
+    await this.waitForIceGathering();
+    return this.peer.localDescription;
   }
 
   async getAnswer(offer) {
-    if (this.peer) {
-      await this.peer.setRemoteDescription(offer);
-      const ans = await this.peer.createAnswer();
-      await this.peer.setLocalDescription(new RTCSessionDescription(ans));
-      return ans;
-    }
+    await this.peer.setRemoteDescription(new RTCSessionDescription(offer));
+    await this.flushPendingCandidates();
+    const ans = await this.peer.createAnswer();
+    await this.peer.setLocalDescription(new RTCSessionDescription(ans));
+    await this.waitForIceGathering();
+    return this.peer.localDescription;
   }
-  async setLocalDescription(ans) {
-    if (this.peer) {
-      await this.peer.setRemoteDescription(new RTCSessionDescription(ans));
+
+  async setRemoteDescription(ans) {
+    await this.peer.setRemoteDescription(new RTCSessionDescription(ans));
+    await this.flushPendingCandidates();
+  }
+
+  async flushPendingCandidates() {
+    for (const candidate of this.pendingCandidates) {
+      await this.peer.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+    this.pendingCandidates = [];
+  }
+
+  async addIceCandidate(candidate) {
+    if (!candidate) return;
+    if (this.peer.remoteDescription) {
+      await this.peer.addIceCandidate(new RTCIceCandidate(candidate));
+    } else {
+      this.pendingCandidates.push(candidate);
     }
   }
 }

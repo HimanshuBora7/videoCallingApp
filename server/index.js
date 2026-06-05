@@ -10,9 +10,19 @@ io.on("connection", (socket) => {
     const { email, room } = data;
     emailToSocketIdMap.set(email, socket.id);
     socketIdToMailMap.set(socket.id, email);
-    io.to(room).emit("user:joined", { email, id: socket.id });
-    socket.join(room);
 
+    const existingRoom = io.sockets.adapter.rooms.get(room);
+    if (existingRoom) {
+      for (const socketId of existingRoom) {
+        if (socketId !== socket.id) {
+          const existingEmail = socketIdToMailMap.get(socketId);
+          socket.emit("user:joined", { email: existingEmail, id: socketId });
+        }
+      }
+    }
+
+    socket.join(room);
+    socket.to(room).emit("user:joined", { email, id: socket.id });
     io.to(socket.id).emit("room:join", data);
   });
 
@@ -30,5 +40,9 @@ io.on("connection", (socket) => {
 
   socket.on("peer:nego:done", ({ to, ans }) => {
     io.to(to).emit("peer:nego:final", { from: socket.id, ans });
+  });
+
+  socket.on("ice:candidate", ({ to, candidate }) => {
+    io.to(to).emit("ice:candidate", { from: socket.id, candidate });
   });
 });
